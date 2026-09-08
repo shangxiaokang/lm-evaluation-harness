@@ -401,11 +401,29 @@ class MegatronLMEval(LM):
         eval_logger.info(f"Initializing Megatron with args: {' '.join(argv[1:])}")
 
         try:
-            # Initialize Megatron
-            initialize_megatron(
-                extra_args_provider=None,
-                args_defaults={"tokenizer_type": kwargs["tokenizer_type"]},
-            )
+            # Megatron-LM initialization changed in newer releases: argument
+            # parsing/global-variable setup moved from initialize_megatron()
+            # into parse_and_validate_args(). Detect the API at runtime so the
+            # adapter remains compatible with both layouts.
+            import inspect
+
+            initialize_parameters = inspect.signature(initialize_megatron).parameters
+            args_defaults = {"tokenizer_type": kwargs["tokenizer_type"]}
+            if "extra_args_provider" in initialize_parameters:
+                # Legacy Megatron-LM API.
+                initialize_megatron(
+                    extra_args_provider=None,
+                    args_defaults=args_defaults,
+                )
+            else:
+                # New Megatron-LM API.
+                from megatron.training.arguments import parse_and_validate_args
+
+                parse_and_validate_args(
+                    extra_args_provider=None,
+                    args_defaults=args_defaults,
+                )
+                initialize_megatron()
 
             args = get_args()
             self._args = args
