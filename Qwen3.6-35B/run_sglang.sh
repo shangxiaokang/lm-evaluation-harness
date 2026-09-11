@@ -11,18 +11,17 @@
 #
 # Do not point MODEL_PATH at a pre-quantized NVFP4 directory.
 #
-# E.g. on the node:
+# E.g. on a 2-GPU GB200 node:
 #   bash run_sglang.sh
 #   LIMIT=16 bash run_sglang.sh
-#   TP_SIZE=8 BATCH_SIZE=32 bash run_sglang.sh
 #   MODEL_PATH=/path/to/bf16_or_fp8 bash run_sglang.sh
 # =============================================================================
 
 set -euo pipefail
 
 export CUDA_DEVICE_MAX_CONNECTIONS="${CUDA_DEVICE_MAX_CONNECTIONS:-1}"
-export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0,1,2,3,4,5,6,7}"
-export HF_HOME="${HF_HOME:-/lustre/raplab/client/xshang/workspace/huggingface}"
+export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0,1}"
+export HF_HOME="${HF_HOME:-/lustre/fsw/general_sa/xshang/huggingface}"
 export HF_DATASETS_CACHE="${HF_DATASETS_CACHE:-${HF_HOME}/datasets}"
 export TRANSFORMERS_CACHE="${TRANSFORMERS_CACHE:-${HF_HOME}/hub}"
 export HF_HUB_OFFLINE="${HF_HUB_OFFLINE:-0}"
@@ -31,12 +30,12 @@ SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
 HARNESS_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 export PYTHONPATH="${HARNESS_DIR}${PYTHONPATH:+:${PYTHONPATH}}"
 
-MODEL_PATH="${MODEL_PATH:-Qwen/Qwen3.6-35B-A3B}"
+MODEL_PATH="${MODEL_PATH:-/lustre/fsw/general_sa/xshang/huggingface/Qwen3.6-35B-A3B}"
 TASK="${TASK:-arc_easy}"
 BATCH_SIZE="${BATCH_SIZE:-32}"
 NUM_FEWSHOT="${NUM_FEWSHOT:-0}"
 DTYPE="${DTYPE:-bfloat16}"
-TP_SIZE="${TP_SIZE:-1}"
+TP_SIZE="${TP_SIZE:-2}"
 DP_SIZE="${DP_SIZE:-1}"
 MEM_FRACTION="${MEM_FRACTION:-0.8}"
 MAX_MODEL_LEN="${MAX_MODEL_LEN:-4096}"

@@ -6,22 +6,21 @@
 #   Online:  BF16/FP8 weights + quantization=nvfp4_online
 #            + moe_runner_backend=flashinfer_trtllm  (SM100/SM103)
 #   Offline: pre-quantized NVFP4 ckpt + quantization=modelopt_mixed
-#            + moe_runner_backend=flashinfer_cutlass (SM100/SM120, incl. 5K-pro)
+#            + moe_runner_backend=flashinfer_trtllm  (GB200/SM100)
 #
 # Do not set quantization=nvfp4_online on this checkpoint.
 #
-# E.g. on the node:
+# E.g. on a 2-GPU node:
 #   bash run_sglang_nvfp4_offline.sh
 #   LIMIT=16 bash run_sglang_nvfp4_offline.sh
-#   TP_SIZE=8 BATCH_SIZE=32 bash run_sglang_nvfp4_offline.sh
 #   TASK=mmlu_pro bash run_sglang_nvfp4_offline.sh
 # =============================================================================
 
 set -euo pipefail
 
 export CUDA_DEVICE_MAX_CONNECTIONS="${CUDA_DEVICE_MAX_CONNECTIONS:-1}"
-export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0,1,2,3,4,5,6,7}"
-export HF_HOME="${HF_HOME:-/lustre/raplab/client/xshang/workspace/huggingface}"
+export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0,1}"
+export HF_HOME="${HF_HOME:-/lustre/fsw/general_sa/xshang/huggingface}"
 export HF_DATASETS_CACHE="${HF_DATASETS_CACHE:-${HF_HOME}/datasets}"
 export TRANSFORMERS_CACHE="${TRANSFORMERS_CACHE:-${HF_HOME}/hub}"
 export HF_HUB_OFFLINE="${HF_HUB_OFFLINE:-0}"
@@ -30,7 +29,7 @@ SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
 HARNESS_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 export PYTHONPATH="${HARNESS_DIR}${PYTHONPATH:+:${PYTHONPATH}}"
 
-MODEL_PATH="${MODEL_PATH:-/lustre/raplab/client/xshang/workspace/huggingface/Qwen3.6-35B-A3B-NVFP4}"
+MODEL_PATH="${MODEL_PATH:-/lustre/fsw/general_sa/xshang/huggingface/Qwen3.6-35B-A3B-NVFP4}"
 TASK="${TASK:-mmlu_pro}"
 BATCH_SIZE="${BATCH_SIZE:-4}"
 NUM_FEWSHOT="${NUM_FEWSHOT:-0}"
@@ -43,8 +42,8 @@ TRUST_REMOTE_CODE="${TRUST_REMOTE_CODE:-True}"
 LIMIT="${LIMIT:-}"
 # SGLang: auto / fp8_e4m3 / fp8_e5m2. auto reads FP8 KV from ModelOpt config.
 KV_CACHE_DTYPE="${KV_CACHE_DTYPE:-auto}"
-# Serialized NVFP4 MoE cannot use FLASHINFER_TRTLLM (5K-pro auto-picks that).
-MOE_RUNNER_BACKEND="${MOE_RUNNER_BACKEND:-flashinfer_cutlass}"
+# GB200 uses the FlashInfer TensorRT-LLM MoE backend.
+MOE_RUNNER_BACKEND="${MOE_RUNNER_BACKEND:-flashinfer_trtllm}"
 # MIXED_PRECISION: attention FP8 + MoE W4A16_NVFP4
 QUANTIZATION="${QUANTIZATION:-modelopt_mixed}"
 
