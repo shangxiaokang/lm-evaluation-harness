@@ -1,0 +1,78 @@
+{
+  "attention_backend": "trtllm_mha",
+  "bf16_gemm_backend": "auto",
+  "chunked_prefill_size": 8192,
+  "context_length": 8192,
+  "cuda_graph_max_bs_decode": 32,
+  "disable_radix_cache": true,
+  "dp_size": 1,
+  "dtype": "bfloat16",
+  "ep_size": 1,
+  "fp4_gemm_runner_backend": "auto",
+  "fp8_gemm_runner_backend": "auto",
+  "kv_cache_dtype": "bfloat16",
+  "linear_attn_decode_backend": "flashinfer",
+  "linear_attn_prefill_backend": "flashinfer",
+  "mamba_full_memory_ratio": 0.9,
+  "mamba_radix_cache_strategy": "extra_buffer_lazy",
+  "mamba_ssm_dtype": "bfloat16",
+  "max_mamba_cache_size": 32,
+  "max_running_requests": 32,
+  "max_total_tokens": null,
+  "mem_fraction_static": 0.85,
+  "model_path": "/lustre/fsw/general_sa/xshang/huggingface/Qwen3.8-Flash-Next",
+  "moe_runner_backend": "flashinfer_trtllm",
+  "page_size": 64,
+  "ple_offload_embedding": false,
+  "quantization": "nvfp4_online",
+  "speculative_algorithm": null,
+  "startup_time": {
+    "cuda_graph": {
+      "decode": 9.54704751999816,
+      "draft_decode": 0.0,
+      "draft_extend": 0.0,
+      "draft_prefill": 0.0,
+      "prefill": 0.0,
+      "target_verify": 0.0
+    },
+    "kv_cache_allocation": 0.487901612999849,
+    "load_weight": 229.77049291701405,
+    "scheduler_e2e": 339.7271266360185,
+    "tokenizer_e2e": 351.3288480229967
+  },
+  "tp_size": 4,
+  "version": "0.5.20.dev545+g7f09fbcd2",
+  "workers": [
+    {
+      "effective_max_running_requests_per_dp": 32,
+      "memory_usage": {
+        "graph": {
+          "decode": 1.248,
+          "draft_decode": 0.0,
+          "draft_extend": 0.0,
+          "draft_prefill": 0.0,
+          "prefill": 0.0,
+          "target_verify": 0.0
+        },
+        "kvcache": 101.249,
+        "startup_available": 22.657,
+        "token_capacity": 8326784,
+        "token_capacity_swa": null,
+        "weight": 52.908
+      },
+      "startup_time": {
+        "cuda_graph": {
+          "decode": 9.543552085000556,
+          "draft_decode": 0.0,
+          "draft_extend": 0.0,
+          "draft_prefill": 0.0,
+          "prefill": 0.0,
+          "target_verify": 0.0
+        },
+        "kv_cache_allocation": 0.4877583810011856,
+        "load_weight": 229.43269076701836,
+        "scheduler_e2e": 339.5604940970079
+      }
+    }
+  ]
+}

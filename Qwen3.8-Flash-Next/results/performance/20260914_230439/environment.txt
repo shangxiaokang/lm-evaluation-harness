@@ -1,0 +1,21 @@
+timestamp=2026-09-14T23:04:39-07:00
+hostname=lyris0111.lyris.clusters.nvidia.com
+run_id=20260914_230439
+modes=bf16 nvfp4_online nvfp4_offline
+cuda_visible_devices=0,1,2,3
+tp_size=4
+dp_size=1
+dtype=bfloat16
+kv_cache_dtype=bfloat16
+ple_offload_embedding=0
+disable_radix_cache=1
+max_running_requests=32
+max_mamba_cache_size=32
+sglang_commit=7f09fbcd2526a7d953dcda5a9714952b43a97408
+sglang=0.5.20.dev545+g7f09fbcd2
+sglang_file=/lustre/fsw/general_sa/xshang/sglang/python/sglang/__init__.py
+torch=2.13.0+cu130
+0, NVIDIA GB200, GPU-3a264cbe-f168-b577-f98c-adece4ee132f, 580.173.02, 189471 MiB
+1, NVIDIA GB200, GPU-0f478046-ed8d-d683-1236-986e454e9793, 580.173.02, 189471 MiB
+2, NVIDIA GB200, GPU-3f61609a-0d89-0f7f-f968-578c854452ac, 580.173.02, 189471 MiB
+3, NVIDIA GB200, GPU-3f0c9a42-966d-ad43-c198-18fb391a0b70, 580.173.02, 189471 MiB

@@ -106,7 +106,7 @@ resolve_mode() {
     nvfp4_offline)
       MODE="nvfp4_offline"
       MODEL_PATH="${NVFP4_MODEL}"
-      EXPECTED_QUANTIZATION="modelopt_mixed"
+      EXPECTED_QUANTIZATION="modelopt_fp4"
       if [[ -n "${OFFLINE_QUANTIZATION:-}" && "${OFFLINE_QUANTIZATION}" != "auto" ]]; then
         EXPECTED_QUANTIZATION="${OFFLINE_QUANTIZATION}"
         MODE_SERVER_ARGS+=(--quantization "${OFFLINE_QUANTIZATION}")

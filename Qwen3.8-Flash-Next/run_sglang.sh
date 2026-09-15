@@ -28,8 +28,8 @@ HARNESS_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 export PYTHONPATH="${HARNESS_DIR}${PYTHONPATH:+:${PYTHONPATH}}"
 
 MODEL_PATH="${MODEL_PATH:-/lustre/fsw/general_sa/xshang/huggingface/Qwen3.8-Flash-Next}"
-TASK="${TASK:-mmlu_pro}"
-BATCH_SIZE="${BATCH_SIZE:-4}"
+TASK="${TASK:-arc_easy}"
+BATCH_SIZE="${BATCH_SIZE:-32}"
 NUM_FEWSHOT="${NUM_FEWSHOT:-0}"
 DTYPE="${DTYPE:-bfloat16}"
 TP_SIZE="${TP_SIZE:-2}"
@@ -42,7 +42,7 @@ KV_CACHE_DTYPE="${KV_CACHE_DTYPE:-auto}"
 
 # Qwen3.8 text evaluation does not need the vision tower. Its PLE n-gram
 # embedding is large, so keep it in host memory.
-LANGUAGE_MODEL_ONLY="${LANGUAGE_MODEL_ONLY:-True}"
+LANGUAGE_MODEL_ONLY="${LANGUAGE_MODEL_ONLY:-False}"
 PLE_OFFLOAD_EMBEDDING="${PLE_OFFLOAD_EMBEDDING:-True}"
 
 # Qwen3.8 uses QSA plus Gated DeltaNet. These settings match its cache layout.
