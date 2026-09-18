@@ -48,6 +48,11 @@ SERVER_CONFIG_FIELDS = (
     "tp_size",
     "dp_size",
     "ep_size",
+    "moe_dp_size",
+    "enable_dp_attention",
+    "enable_dp_lm_head",
+    "moe_dense_tp_size",
+    "moe_a2a_backend",
     "kv_cache_dtype",
     "attention_backend",
     "linear_attn_prefill_backend",
@@ -111,8 +116,42 @@ def read_json(path: Path) -> dict[str, Any]:
     return value
 
 
+def effective_parallel_sizes(
+    info: dict[str, Any],
+) -> tuple[int | None, int | None]:
+    try:
+        tp_size = int(info["tp_size"])
+        dp_size = int(info.get("dp_size", 1))
+        ep_size = int(info.get("ep_size", 1))
+        moe_dp_size = int(info.get("moe_dp_size", 1))
+    except (KeyError, TypeError, ValueError):
+        return None, None
+
+    enable_dp_attention = info.get("enable_dp_attention", False)
+    if isinstance(enable_dp_attention, str):
+        enable_dp_attention = enable_dp_attention.lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+
+    attention_divisor = dp_size if enable_dp_attention else 1
+    moe_divisor = ep_size * moe_dp_size
+    if (
+        min(tp_size, attention_divisor, moe_divisor) <= 0
+        or tp_size % attention_divisor
+        or tp_size % moe_divisor
+    ):
+        return None, None
+    return tp_size // attention_divisor, tp_size // moe_divisor
+
+
 def selected_server_info(info: dict[str, Any]) -> dict[str, Any]:
     selected = {key: info.get(key) for key in SERVER_CONFIG_FIELDS}
+    attention_tp_size, moe_tp_size = effective_parallel_sizes(info)
+    selected["effective_attention_tp_size"] = attention_tp_size
+    selected["effective_moe_tp_size"] = moe_tp_size
     selected["startup_time"] = info.get("startup_time")
     selected["workers"] = [
         {
@@ -170,13 +209,29 @@ def config_matches(actual: Any, expected: Any) -> bool:
 
 
 def validate_controlled_config(info: dict[str, Any], mode: str) -> None:
+    tp_size = int(env("TP_SIZE", "4"))
+    dp_size = int(env("DP_SIZE", "1"))
+    ep_size = int(env("EP_SIZE", "1"))
+    moe_dp_size = int(env("MOE_DP_SIZE", "1"))
+    enable_dp_attention = env_bool("ENABLE_DP_ATTENTION", "0")
+    requested_chunked_prefill_size = int(
+        env("CHUNKED_PREFILL_SIZE", "8192")
+    )
+    resolved_chunked_prefill_size = requested_chunked_prefill_size
+    if enable_dp_attention:
+        resolved_chunked_prefill_size //= dp_size
+
     expected: dict[str, Any] = {
-        "tp_size": int(env("TP_SIZE", "4")),
-        "dp_size": int(env("DP_SIZE", "1")),
+        "tp_size": tp_size,
+        "dp_size": dp_size,
+        "ep_size": ep_size,
+        "moe_dp_size": moe_dp_size,
+        "enable_dp_attention": enable_dp_attention,
+        "enable_dp_lm_head": env_bool("ENABLE_DP_LM_HEAD", "0"),
         "mem_fraction_static": float(env("MEM_FRACTION_STATIC", "0.85")),
         "context_length": int(env("CONTEXT_LENGTH", "8192")),
         "page_size": int(env("PAGE_SIZE", "64")),
-        "chunked_prefill_size": int(env("CHUNKED_PREFILL_SIZE", "8192")),
+        "chunked_prefill_size": resolved_chunked_prefill_size,
         "max_running_requests": int(env("MAX_RUNNING_REQUESTS", "32")),
         "cuda_graph_max_bs_decode": int(
             env("CUDA_GRAPH_MAX_BS_DECODE", env("MAX_RUNNING_REQUESTS", "32"))
@@ -200,6 +255,7 @@ def validate_controlled_config(info: dict[str, Any], mode: str) -> None:
         "moe_runner_backend": env(
             "MOE_RUNNER_BACKEND", "flashinfer_trtllm"
         ),
+        "moe_a2a_backend": env("MOE_A2A_BACKEND", "none"),
         "mamba_ssm_dtype": env("MAMBA_SSM_DTYPE", "bfloat16"),
         "mamba_radix_cache_strategy": env(
             "MAMBA_RADIX_CACHE_STRATEGY", "extra_buffer_lazy"
@@ -222,6 +278,10 @@ def validate_controlled_config(info: dict[str, Any], mode: str) -> None:
     max_total_tokens = env("MAX_TOTAL_TOKENS", "")
     if max_total_tokens:
         expected["max_total_tokens"] = int(max_total_tokens)
+
+    moe_dense_tp_size = env("MOE_DENSE_TP_SIZE", "")
+    if moe_dense_tp_size:
+        expected["moe_dense_tp_size"] = int(moe_dense_tp_size)
 
     expected_model = env(
         "NVFP4_MODEL" if mode == "nvfp4_offline" else "BF16_MODEL",
@@ -251,6 +311,29 @@ def validate_controlled_config(info: dict[str, Any], mode: str) -> None:
         actual_value = info[key]
         if not config_matches(actual_value, expected_value):
             errors.append(f"{key}: got {actual_value!r}, expected {expected_value!r}")
+
+    attention_tp_size, moe_tp_size = effective_parallel_sizes(info)
+    expected_attention_tp_size = int(
+        env(
+            "ATTENTION_TP_SIZE",
+            str(tp_size // dp_size if enable_dp_attention else tp_size),
+        )
+    )
+    expected_moe_tp_size = int(
+        env("MOE_TP_SIZE", str(tp_size // (ep_size * moe_dp_size)))
+    )
+    if attention_tp_size != expected_attention_tp_size:
+        errors.append(
+            "effective_attention_tp_size: got {!r}, expected {!r}".format(
+                attention_tp_size, expected_attention_tp_size
+            )
+        )
+    if moe_tp_size != expected_moe_tp_size:
+        errors.append(
+            "effective_moe_tp_size: got {!r}, expected {!r}".format(
+                moe_tp_size, expected_moe_tp_size
+            )
+        )
 
     states = [
         state
@@ -644,6 +727,7 @@ def collect_server_rows(run_dir: Path) -> list[dict[str, Any]]:
         peak_hbm, peak_hbm_by_device = gpu_peak_hbm(
             info_path.parent / "gpu_metrics.csv"
         )
+        attention_tp_size, moe_tp_size = effective_parallel_sizes(info)
         rows.append(
             {
                 "mode": mode,
@@ -654,6 +738,14 @@ def collect_server_rows(run_dir: Path) -> list[dict[str, Any]]:
                 "kv_cache_dtype": info.get("kv_cache_dtype"),
                 "tp_size": info.get("tp_size"),
                 "dp_size": info.get("dp_size"),
+                "ep_size": info.get("ep_size"),
+                "moe_dp_size": info.get("moe_dp_size"),
+                "enable_dp_attention": info.get("enable_dp_attention"),
+                "enable_dp_lm_head": info.get("enable_dp_lm_head"),
+                "effective_attention_tp_size": attention_tp_size,
+                "effective_moe_tp_size": moe_tp_size,
+                "moe_dense_tp_size": info.get("moe_dense_tp_size"),
+                "moe_a2a_backend": info.get("moe_a2a_backend"),
                 "attention_backend": info.get("attention_backend"),
                 "moe_runner_backend": info.get("moe_runner_backend"),
                 "fp4_gemm_runner_backend": info.get(
@@ -711,14 +803,21 @@ def write_server_summary(rows: list[dict[str, Any]], run_dir: Path) -> None:
         "",
         "Memory breakdown values are per-worker maxima from `/server_info`.",
         "",
-        "| Mode | Quantization | Ready s | Load weight s | Weight GB | KV GB | Token capacity | Peak HBM GiB (sum) |",
-        "|---|---|---:|---:|---:|---:|---:|---:|",
+        "| Mode | Quantization | Topology | Ready s | Load weight s | "
+        "Weight GB | KV GB | Token capacity | Peak HBM GiB (sum) |",
+        "|---|---|---|---:|---:|---:|---:|---:|---:|",
     ]
     for row in rows:
         lines.append(
-            "| {mode} | {quantization} | {ready} | {load} | {weight} | "
+            "| {mode} | {quantization} | {topology} | {ready} | {load} | "
+            "{weight} | "
             "{kv} | {tokens} | {peak} |".format(
                 **row,
+                topology="Attn TP{} / MoE TP{} / EP{}".format(
+                    row.get("effective_attention_tp_size") or "?",
+                    row.get("effective_moe_tp_size") or "?",
+                    row.get("ep_size") or "?",
+                ),
                 ready=fmt(row.get("time_to_ready_s")),
                 load=fmt(row.get("load_weight_s")),
                 weight=fmt(row.get("weight_gb_per_worker_max"), 3),

@@ -1,9 +1,25 @@
 #!/usr/bin/env bash
 # Sequentially benchmark BF16, NVFP4 online, and NVFP4 offline.
+#
+# SGLang models EP as a sub-dimension of its outer TP process group. Therefore
+# four-way EP with effective Attention TP=1 and MoE TP=1 uses an outer
+# tp_size=4 process group plus four-way DP attention; tp_size=1, ep_size=4 is
+# not a valid SGLang topology.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+
+# Four physical GPUs: outer world=4, DP attention=4, EP=4. The resulting
+# effective Attention TP and MoE TP are both 1.
+TP_SIZE="${TP_SIZE:-4}"
+DP_SIZE="${DP_SIZE:-4}"
+EP_SIZE="${EP_SIZE:-4}"
+MOE_DP_SIZE="${MOE_DP_SIZE:-1}"
+ENABLE_DP_ATTENTION="${ENABLE_DP_ATTENTION:-1}"
+ENABLE_DP_LM_HEAD="${ENABLE_DP_LM_HEAD:-1}"
+MOE_A2A_BACKEND="${MOE_A2A_BACKEND:-none}"
+
 # shellcheck source=perf_common.sh
 source "${SCRIPT_DIR}/perf_common.sh"
 
@@ -69,8 +85,15 @@ mkdir -p "${RUN_DIR}"
   echo "run_id=${RUN_ID}"
   echo "modes=${MODES}"
   echo "cuda_visible_devices=${CUDA_VISIBLE_DEVICES}"
-  echo "tp_size=${TP_SIZE}"
+  echo "sglang_outer_tp_size=${TP_SIZE}"
   echo "dp_size=${DP_SIZE}"
+  echo "ep_size=${EP_SIZE}"
+  echo "moe_dp_size=${MOE_DP_SIZE}"
+  echo "enable_dp_attention=${ENABLE_DP_ATTENTION}"
+  echo "enable_dp_lm_head=${ENABLE_DP_LM_HEAD}"
+  echo "moe_a2a_backend=${MOE_A2A_BACKEND}"
+  echo "effective_attention_tp_size=${ATTENTION_TP_SIZE}"
+  echo "effective_moe_tp_size=${MOE_TP_SIZE}"
   echo "dtype=${DTYPE}"
   echo "kv_cache_dtype=${KV_CACHE_DTYPE}"
   echo "ple_offload_embedding=${PLE_OFFLOAD_EMBEDDING}"

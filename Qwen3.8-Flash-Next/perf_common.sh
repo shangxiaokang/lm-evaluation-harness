@@ -44,6 +44,55 @@ export PYTHONPATH="${SGLANG_SOURCE}/python${PYTHONPATH:+:${PYTHONPATH}}"
 
 TP_SIZE="${TP_SIZE:-4}"
 DP_SIZE="${DP_SIZE:-1}"
+EP_SIZE="${EP_SIZE:-1}"
+MOE_DP_SIZE="${MOE_DP_SIZE:-1}"
+ENABLE_DP_ATTENTION="${ENABLE_DP_ATTENTION:-0}"
+ENABLE_DP_LM_HEAD="${ENABLE_DP_LM_HEAD:-0}"
+MOE_DENSE_TP_SIZE="${MOE_DENSE_TP_SIZE:-}"
+MOE_A2A_BACKEND="${MOE_A2A_BACKEND:-none}"
+
+validate_parallel_topology() {
+  local name value
+  for name in TP_SIZE DP_SIZE EP_SIZE MOE_DP_SIZE; do
+    value="${!name}"
+    [[ "${value}" =~ ^[1-9][0-9]*$ ]] || \
+      die "${name} must be a positive integer, got: ${value}"
+  done
+
+  local moe_parallel_size=$((EP_SIZE * MOE_DP_SIZE))
+  (( moe_parallel_size <= TP_SIZE )) || \
+    die "EP_SIZE * MOE_DP_SIZE must not exceed TP_SIZE"
+  (( TP_SIZE % moe_parallel_size == 0 )) || \
+    die "TP_SIZE=${TP_SIZE} must be divisible by EP_SIZE * MOE_DP_SIZE=${moe_parallel_size}"
+  if (( MOE_DP_SIZE > 1 && EP_SIZE > 1 )); then
+    (( moe_parallel_size == TP_SIZE )) || \
+      die "EP_SIZE * MOE_DP_SIZE must equal TP_SIZE when both exceed 1"
+  fi
+
+  if is_true "${ENABLE_DP_ATTENTION}"; then
+    (( TP_SIZE % DP_SIZE == 0 )) || \
+      die "TP_SIZE=${TP_SIZE} must be divisible by DP_SIZE=${DP_SIZE} with DP attention"
+    ATTENTION_TP_SIZE=$((TP_SIZE / DP_SIZE))
+  else
+    ATTENTION_TP_SIZE=${TP_SIZE}
+  fi
+  if is_true "${ENABLE_DP_LM_HEAD}" && \
+     ! is_true "${ENABLE_DP_ATTENTION}"; then
+    die "ENABLE_DP_LM_HEAD requires ENABLE_DP_ATTENTION"
+  fi
+
+  if [[ -n "${MOE_DENSE_TP_SIZE}" ]]; then
+    [[ "${MOE_DENSE_TP_SIZE}" =~ ^[1-9][0-9]*$ ]] || \
+      die "MOE_DENSE_TP_SIZE must be empty or a positive integer"
+    (( MOE_DENSE_TP_SIZE == 1 || MOE_DENSE_TP_SIZE == TP_SIZE )) || \
+      die "MOE_DENSE_TP_SIZE currently supports only 1 or TP_SIZE"
+  fi
+
+  MOE_TP_SIZE=$((TP_SIZE / moe_parallel_size))
+}
+
+validate_parallel_topology
+
 DTYPE="${DTYPE:-bfloat16}"
 KV_CACHE_DTYPE="${KV_CACHE_DTYPE:-bfloat16}"
 MEM_FRACTION_STATIC="${MEM_FRACTION_STATIC:-0.85}"
@@ -135,10 +184,15 @@ validate_mode_inputs() {
   fi
 
   local visible_gpus
-  local required_gpus=$((TP_SIZE * DP_SIZE))
+  local required_gpus
+  if is_true "${ENABLE_DP_ATTENTION}"; then
+    required_gpus=${TP_SIZE}
+  else
+    required_gpus=$((TP_SIZE * DP_SIZE))
+  fi
   IFS=',' read -r -a visible_gpus <<< "${CUDA_VISIBLE_DEVICES}"
   (( ${#visible_gpus[@]} >= required_gpus )) || \
-    die "TP_SIZE=${TP_SIZE} and DP_SIZE=${DP_SIZE} need ${required_gpus} GPUs; CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES}"
+    die "parallel topology needs ${required_gpus} GPUs; CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES}"
 }
 
 build_server_args() {
@@ -150,6 +204,9 @@ build_server_args() {
     --port "${PORT}"
     --tp-size "${TP_SIZE}"
     --dp-size "${DP_SIZE}"
+    --ep-size "${EP_SIZE}"
+    --moe-dp-size "${MOE_DP_SIZE}"
+    --moe-a2a-backend "${MOE_A2A_BACKEND}"
     --dtype "${DTYPE}"
     --kv-cache-dtype "${KV_CACHE_DTYPE}"
     --context-length "${CONTEXT_LENGTH}"
@@ -170,6 +227,15 @@ build_server_args() {
 
   if [[ -n "${MAX_TOTAL_TOKENS}" ]]; then
     SERVER_ARGS+=(--max-total-tokens "${MAX_TOTAL_TOKENS}")
+  fi
+  if [[ -n "${MOE_DENSE_TP_SIZE}" ]]; then
+    SERVER_ARGS+=(--moe-dense-tp-size "${MOE_DENSE_TP_SIZE}")
+  fi
+  if is_true "${ENABLE_DP_ATTENTION}"; then
+    SERVER_ARGS+=(--enable-dp-attention)
+  fi
+  if is_true "${ENABLE_DP_LM_HEAD}"; then
+    SERVER_ARGS+=(--enable-dp-lm-head)
   fi
   if [[ -n "${ATTENTION_BACKEND}" ]]; then
     SERVER_ARGS+=(--attention-backend "${ATTENTION_BACKEND}")
@@ -193,7 +259,9 @@ build_server_args() {
 }
 
 export SGLANG_SOURCE PYTHON_BIN BF16_MODEL NVFP4_MODEL TOKENIZER_PATH
-export TP_SIZE DP_SIZE DTYPE KV_CACHE_DTYPE MEM_FRACTION_STATIC CONTEXT_LENGTH
+export TP_SIZE DP_SIZE EP_SIZE MOE_DP_SIZE ATTENTION_TP_SIZE MOE_TP_SIZE
+export ENABLE_DP_ATTENTION ENABLE_DP_LM_HEAD MOE_DENSE_TP_SIZE MOE_A2A_BACKEND
+export DTYPE KV_CACHE_DTYPE MEM_FRACTION_STATIC CONTEXT_LENGTH
 export MAX_TOTAL_TOKENS PAGE_SIZE CHUNKED_PREFILL_SIZE MAX_RUNNING_REQUESTS
 export CUDA_GRAPH_MAX_BS_DECODE MAX_MAMBA_CACHE_SIZE MAMBA_SSM_DTYPE
 export MAMBA_FULL_MEMORY_RATIO MAMBA_RADIX_CACHE_STRATEGY DISABLE_RADIX_CACHE

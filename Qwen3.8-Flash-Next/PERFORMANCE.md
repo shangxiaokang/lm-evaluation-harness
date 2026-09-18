@@ -40,7 +40,9 @@ The SGLang build must support `Qwen4ExpForConditionalGeneration`,
 
 The defaults intentionally fix the following across all modes:
 
-- 4 GB200 GPUs, TP=4 and DP=1.
+- 4 GB200 GPUs with effective Attention TP=1, MoE TP=1, and EP=4.
+  SGLang represents this as an outer `tp_size=4`, DP-attention `dp_size=4`,
+  and `ep_size=4`; `--tp-size 1 --ep-size 4` is not a valid SGLang topology.
 - BF16 KV cache and BF16 Mamba state.
 - `flashinfer_trtllm` MoE runner.
 - FlashInfer GDN prefill/decode.
@@ -57,6 +59,11 @@ save `server_info.json` and report the resolved quantization.
 server setting before sending benchmark traffic. It also rejects incomplete
 requests, missing repeats, and mismatched workload matrices before generating
 speedups.
+
+The Qwen3.8-Flash-Next cookbook has validated TP4+EP4, but currently does not
+list a validated DP-attention recipe for this checkpoint. Run the smoke test
+below before committing to the full matrix. The report records both SGLang's
+outer TP and the effective Attention/MoE TP sizes.
 
 Run a short smoke test first:
 
@@ -108,9 +115,12 @@ The fixed-batch JSONL is deliberately not folded into the serving summary.
 Terminal 1:
 
 ```bash
-bash launch_perf_server.sh bf16
-bash launch_perf_server.sh nvfp4_online
-bash launch_perf_server.sh nvfp4_offline
+TP_SIZE=4 DP_SIZE=4 EP_SIZE=4 ENABLE_DP_ATTENTION=1 \
+  ENABLE_DP_LM_HEAD=1 bash launch_perf_server.sh bf16
+TP_SIZE=4 DP_SIZE=4 EP_SIZE=4 ENABLE_DP_ATTENTION=1 \
+  ENABLE_DP_LM_HEAD=1 bash launch_perf_server.sh nvfp4_online
+TP_SIZE=4 DP_SIZE=4 EP_SIZE=4 ENABLE_DP_ATTENTION=1 \
+  ENABLE_DP_LM_HEAD=1 bash launch_perf_server.sh nvfp4_offline
 ```
 
 Only run one server at a time. In terminal 2:
