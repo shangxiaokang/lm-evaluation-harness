@@ -340,7 +340,10 @@ def validate_controlled_config(info: dict[str, Any], mode: str) -> None:
         for state in info.get("internal_states", [])
         if isinstance(state, dict)
     ]
-    expected_effective = expected["max_running_requests"]
+    attention_dp_size = dp_size if enable_dp_attention else 1
+    expected_effective = (
+        expected["max_running_requests"] // attention_dp_size
+    )
     if not states:
         errors.append("internal_states: missing")
     for index, state in enumerate(states):
