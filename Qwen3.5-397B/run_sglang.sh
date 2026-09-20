@@ -39,7 +39,9 @@ MAMBA_RADIX_CACHE_STRATEGY="${MAMBA_RADIX_CACHE_STRATEGY:-extra_buffer}"
 MAMBA_TRACK_INTERVAL="${MAMBA_TRACK_INTERVAL:-128}"
 ATTENTION_BACKEND="${ATTENTION_BACKEND:-trtllm_mha}"
 MOE_RUNNER_BACKEND="${MOE_RUNNER_BACKEND:-flashinfer_cutedsl}"
-MOE_A2A_BACKEND="${MOE_A2A_BACKEND:-flashinfer}"
+# lm-eval uses DP=1 by default. FlashInfer A2A instead requires DP=TP plus
+# --enable-dp-attention, so use the regular dispatch path for this script.
+MOE_A2A_BACKEND="${MOE_A2A_BACKEND:-none}"
 QUANTIZATION="${QUANTIZATION:-nvfp4_online}"
 
 OUTPUT_DIR="${OUTPUT_DIR:-${SCRIPT_DIR}/results/sglang_nvfp4_online}"
