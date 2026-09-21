@@ -37,8 +37,12 @@ MAMBA_SSM_DTYPE="${MAMBA_SSM_DTYPE:-bfloat16}"
 MAMBA_RADIX_CACHE_STRATEGY="${MAMBA_RADIX_CACHE_STRATEGY:-extra_buffer}"
 MAMBA_TRACK_INTERVAL="${MAMBA_TRACK_INTERVAL:-128}"
 ATTENTION_BACKEND="${ATTENTION_BACKEND:-trtllm_mha}"
-MOE_RUNNER_BACKEND="${MOE_RUNNER_BACKEND:-flashinfer_cutedsl}"
-MOE_A2A_BACKEND="${MOE_A2A_BACKEND:-flashinfer}"
+# flashinfer_cutedsl only supports the NVFP4 MoE paths in this SGLang build.
+# BF16 uses the FlashInfer TensorRT-LLM MoE implementation instead.
+MOE_RUNNER_BACKEND="${MOE_RUNNER_BACKEND:-flashinfer_trtllm}"
+# This accuracy script uses DP=1. FlashInfer A2A requires DP=TP together with
+# DP attention, so use the regular single-DP dispatch path.
+MOE_A2A_BACKEND="${MOE_A2A_BACKEND:-none}"
 
 OUTPUT_DIR="${OUTPUT_DIR:-${SCRIPT_DIR}/results/sglang_hf}"
 LOG_FILE="${SCRIPT_DIR}/sglang_hf_eval_${TASK}_TP${TP_SIZE}_DP${DP_SIZE}_bs${BATCH_SIZE}.log"
