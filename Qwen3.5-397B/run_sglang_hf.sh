@@ -1,14 +1,16 @@
 #!/usr/bin/env bash
 # Qwen3.5-397B-A17B BF16 accuracy evaluation with SGLang.
 #
-# The 397B BF16 checkpoint needs at least 8x B200/GB200-class GPUs. This
-# script therefore defaults to TP=8, DP=1. It intentionally does not set
-# language_model_only: current SGLang does not allow it for Qwen3.5.
+# A four-GPU GB200 node cannot hold this 397B BF16 checkpoint entirely in
+# HBM. The defaults use TP=4 with host-memory offload for accuracy checks.
+# This is not a valid throughput benchmark configuration. It intentionally
+# does not set language_model_only: current SGLang does not allow it for
+# Qwen3.5.
 
 set -euo pipefail
 
 export CUDA_DEVICE_MAX_CONNECTIONS="${CUDA_DEVICE_MAX_CONNECTIONS:-1}"
-export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0,1,2,3,4,5,6,7}"
+export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0,1,2,3}"
 export HF_HOME="${HF_HOME:-/lustre/fsw/general_sa/xshang/huggingface}"
 export HF_DATASETS_CACHE="${HF_DATASETS_CACHE:-${HF_HOME}/datasets}"
 export TRANSFORMERS_CACHE="${TRANSFORMERS_CACHE:-${HF_HOME}/hub}"
@@ -23,9 +25,11 @@ TASK="${TASK:-arc_easy}"
 BATCH_SIZE="${BATCH_SIZE:-4}"
 NUM_FEWSHOT="${NUM_FEWSHOT:-0}"
 DTYPE="${DTYPE:-bfloat16}"
-TP_SIZE="${TP_SIZE:-8}"
+TP_SIZE="${TP_SIZE:-4}"
 DP_SIZE="${DP_SIZE:-1}"
-MEM_FRACTION="${MEM_FRACTION:-0.85}"
+MEM_FRACTION="${MEM_FRACTION:-0.80}"
+# Per TP rank. The TP=4 default reserves about 192 GiB total host memory.
+CPU_OFFLOAD_GB="${CPU_OFFLOAD_GB:-48}"
 MAX_MODEL_LEN="${MAX_MODEL_LEN:-4096}"
 TRUST_REMOTE_CODE="${TRUST_REMOTE_CODE:-True}"
 LIMIT="${LIMIT:-}"
@@ -57,9 +61,9 @@ mkdir -p "${OUTPUT_DIR}" "${HF_HOME}" "${HF_DATASETS_CACHE}" "${TRANSFORMERS_CAC
   echo "Error: this BF16 script received a quantized checkpoint: ${MODEL_PATH}" >&2
   exit 1
 }
-if (( TP_SIZE < 8 )) && [[ "${ALLOW_UNSAFE_BF16:-0}" != "1" ]]; then
-  echo "Error: Qwen3.5-397B BF16 needs TP>=8 on B200/GB200-class GPUs." >&2
-  echo "Set ALLOW_UNSAFE_BF16=1 only on hardware with sufficient HBM." >&2
+if (( TP_SIZE < 8 && CPU_OFFLOAD_GB <= 0 )); then
+  echo "Error: TP_SIZE=${TP_SIZE} cannot hold Qwen3.5-397B BF16 entirely in HBM." >&2
+  echo "Set CPU_OFFLOAD_GB>0, or use at least 8 GPUs." >&2
   exit 1
 fi
 
@@ -70,7 +74,7 @@ REQUIRED_GPUS=$((TP_SIZE * DP_SIZE))
   exit 1
 }
 
-MODEL_ARGS="pretrained=${MODEL_PATH},dtype=${DTYPE},trust_remote_code=${TRUST_REMOTE_CODE},tp_size=${TP_SIZE},dp_size=${DP_SIZE},mem_fraction_static=${MEM_FRACTION},max_model_len=${MAX_MODEL_LEN},kv_cache_dtype=${KV_CACHE_DTYPE},page_size=${PAGE_SIZE},chunked_prefill_size=${CHUNKED_PREFILL_SIZE},max_running_requests=${MAX_RUNNING_REQUESTS},mamba_ssm_dtype=${MAMBA_SSM_DTYPE},mamba_radix_cache_strategy=${MAMBA_RADIX_CACHE_STRATEGY},mamba_track_interval=${MAMBA_TRACK_INTERVAL},attention_backend=${ATTENTION_BACKEND},moe_runner_backend=${MOE_RUNNER_BACKEND},moe_a2a_backend=${MOE_A2A_BACKEND}"
+MODEL_ARGS="pretrained=${MODEL_PATH},dtype=${DTYPE},trust_remote_code=${TRUST_REMOTE_CODE},tp_size=${TP_SIZE},dp_size=${DP_SIZE},mem_fraction_static=${MEM_FRACTION},cpu_offload_gb=${CPU_OFFLOAD_GB},max_model_len=${MAX_MODEL_LEN},kv_cache_dtype=${KV_CACHE_DTYPE},page_size=${PAGE_SIZE},chunked_prefill_size=${CHUNKED_PREFILL_SIZE},max_running_requests=${MAX_RUNNING_REQUESTS},mamba_ssm_dtype=${MAMBA_SSM_DTYPE},mamba_radix_cache_strategy=${MAMBA_RADIX_CACHE_STRATEGY},mamba_track_interval=${MAMBA_TRACK_INTERVAL},attention_backend=${ATTENTION_BACKEND},moe_runner_backend=${MOE_RUNNER_BACKEND},moe_a2a_backend=${MOE_A2A_BACKEND}"
 
 if command -v lm_eval >/dev/null 2>&1; then
   LM_EVAL=(lm_eval)
@@ -85,6 +89,7 @@ echo "Model:       ${MODEL_PATH}"
 echo "Task:        ${TASK}"
 echo "GPUs:        ${CUDA_VISIBLE_DEVICES}"
 echo "TP / DP:     ${TP_SIZE} / ${DP_SIZE}"
+echo "CPU offload: ${CPU_OFFLOAD_GB} GiB per TP rank"
 echo "Batch size:  ${BATCH_SIZE}"
 echo "Max len:     ${MAX_MODEL_LEN}"
 echo "Dtype:       ${DTYPE}"
